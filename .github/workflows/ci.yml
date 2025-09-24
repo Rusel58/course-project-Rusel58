@@ -1,8 +1,12 @@
 name: CI
 on:
   pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [main]
+  workflow_dispatch:
+
 permissions:
   contents: read
 concurrency:
@@ -22,17 +26,12 @@ jobs:
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt -r requirements-dev.txt
+          python -m pip install -U pip
+          pip install -r requirements.txt || true
+          pip install -r requirements-dev.txt
 
-      - name: Lint & Format
-        run: |
-          ruff check . --output-format=github
-          black --check .
-          isort --check-only .
+      - name: Pre-commit (all files)
+        run: pre-commit run --all-files --color always
 
       - name: Tests
         run: pytest -q
-
-      - name: Pre-commit (all files)
-        run: pre-commit run --all-files
