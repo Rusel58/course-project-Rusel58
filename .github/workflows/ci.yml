@@ -32,6 +32,8 @@ jobs:
 
       - name: Pre-commit (all files)
         run: pre-commit run --all-files --color always
+        env:
+          SKIP: no-commit-to-branch
 
       - name: Tests
         run: pytest -q
