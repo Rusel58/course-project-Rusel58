@@ -8,8 +8,11 @@ from app.errors import (
     http_exception_handler,
     request_validation_handler,
 )
+from app.middleware_errors import ProblemJSONMiddleware
 
 app = FastAPI(title="SecDev Course App", version="0.1.0")
+
+app.add_middleware(ProblemJSONMiddleware)
 
 
 @app.get("/health")
