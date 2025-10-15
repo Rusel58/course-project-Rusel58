@@ -29,5 +29,8 @@ async def get_with_policies(url: str) -> httpx.Response:
             if attempt == retries:
                 raise
             await asyncio.sleep(backoff * (2**attempt))
-    assert last_err
-    raise last_err
+    if last_err is not None:
+        raise last_err
+    raise RuntimeError(
+        "Unexpected state in get_with_policies: no response and no exception captured."
+    )
