@@ -4,5 +4,8 @@ services:
     ports:
       - "8000:8000"
     environment:
+      - UPLOAD_DIR=/app/var/uploads
+      - HTTP_MAX_RETRIES=2
+      - HTTP_BACKOFF_BASE=0.2
       - PYTHONUNBUFFERED=1
     profiles: ["dev"]

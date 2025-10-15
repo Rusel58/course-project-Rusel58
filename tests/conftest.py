@@ -1,7 +1,14 @@
-# tests/conftest.py
-import sys
-from pathlib import Path
+import httpx
+import pytest
 
-ROOT = Path(__file__).resolve().parents[1]  # корень репозитория
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+from app.main import create_app
+
+
+@pytest.mark.asyncio
+async def test_health_ok():
+    app = create_app()
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        r = await ac.get("/health")
+    assert r.status_code == 200
+    assert r.json() == {"status": "ok"}
