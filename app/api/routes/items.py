@@ -6,11 +6,14 @@ from app.errors import ApiError
 router = APIRouter(tags=["items"])
 
 
-@router.post("/items")
+@router.post("/items", status_code=201)
 def create_item(name: str):
     if not name or len(name) > 100:
         raise ApiError(
-            code="validation_error", message="name must be 1..100 chars", status=422
+            422,
+            "Unprocessable Entity",
+            "name must be 1..100 chars",
+            extras={"error_code": "validation_error"},
         )
     db = get_db()
     item = {"id": len(db["items"]) + 1, "name": name}
@@ -24,4 +27,9 @@ def get_item(item_id: int):
     for it in db["items"]:
         if it["id"] == item_id:
             return it
-    raise ApiError(code="not_found", message="item not found", status=404)
+    raise ApiError(
+        404,
+        "Not Found",
+        "Item not found",
+        extras={"error_code": "not_found"},
+    )

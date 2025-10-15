@@ -10,7 +10,7 @@ repos:
       - id: mixed-line-ending
       - id: no-commit-to-branch
         args: [ -b, main, -b, master ]
-        stages: [commit]
+        stages: [pre-commit]
   - repo: https://github.com/psf/black
     rev: 24.8.0
     hooks:
