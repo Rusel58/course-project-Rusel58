@@ -1,21 +1,20 @@
+import httpx
 import pytest
 import pytest_asyncio
-from httpx import AsyncClient
 
 from app.errors import ApiError
 from app.main import create_app
 
 
-# ---------- fixtures ----------
 @pytest.fixture
 def app():
-    # изолируем приложение на каждый тест
     return create_app()
 
 
 @pytest_asyncio.fixture
 async def client(app):
-    async with AsyncClient(app=app, base_url="http://test") as ac:
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
 
 
@@ -31,7 +30,8 @@ async def test_rfc7807_contract(app):
             type_="https://example.com/probs/bad-input",
         )
 
-    async with AsyncClient(app=app, base_url="http://test") as ac:
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         r = await ac.get("/boom")
     assert r.status_code == 400
     body = r.json()
@@ -48,8 +48,9 @@ async def test_correlation_id_echo(app):
         raise ApiError(status=404, title="Not found", detail="Nope")
 
     cid = "test-cid-123"
-    async with AsyncClient(
-        app=app, base_url="http://test", headers={"x-correlation-id": cid}
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(
+        transport=transport, base_url="http://test", headers={"x-correlation-id": cid}
     ) as ac:
         r = await ac.get("/boom2")
     assert r.headers.get("x-correlation-id") == cid

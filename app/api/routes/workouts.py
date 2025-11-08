@@ -101,9 +101,7 @@ def get_workout(wid: int) -> Dict[str, Any]:
     rows = _rows()
     w = _find(rows, wid)
     if not w:
-        raise ApiError(
-            404, "Not Found", "Workout not found", extras={"error_code": "not_found"}
-        )
+        raise ApiError(404, "Not Found", "Workout not found", extras={"error_code": "not_found"})
     return w
 
 
@@ -115,9 +113,7 @@ def patch_workout(
     rows = _rows()
     w = _find(rows, wid)
     if not w:
-        raise ApiError(
-            404, "Not Found", "Workout not found", extras={"error_code": "not_found"}
-        )
+        raise ApiError(404, "Not Found", "Workout not found", extras={"error_code": "not_found"})
 
     if "title" in payload and payload["title"] == "":
         raise ApiError(
@@ -169,8 +165,6 @@ def delete_workout(wid: int) -> Response:
     rows = _rows()
     w = _find(rows, wid)
     if not w:
-        raise ApiError(
-            404, "Not Found", "Workout not found", extras={"error_code": "not_found"}
-        )
+        raise ApiError(404, "Not Found", "Workout not found", extras={"error_code": "not_found"})
     rows.remove(w)
     return Response(status_code=204)

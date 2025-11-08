@@ -27,9 +27,7 @@ def problem(
     }
     if extras:
         payload.update(extras)
-    return JSONResponse(
-        payload, status_code=status, media_type="application/problem+json"
-    )
+    return JSONResponse(payload, status_code=status, media_type="application/problem+json")
 
 
 class ApiError(Exception):
@@ -75,11 +73,7 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
     cid = getattr(request.state, "correlation_id", None)
     status = exc.status_code or 500
     # Заголовок по статусу (e.g., 404 -> "Not Found")
-    title = (
-        HTTPStatus(status).phrase
-        if status in HTTPStatus._value2member_map_
-        else "HTTP Error"
-    )
+    title = HTTPStatus(status).phrase if status in HTTPStatus._value2member_map_ else "HTTP Error"
 
     if status >= 500:
         detail = "Unexpected server error."
@@ -97,9 +91,7 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
     )
 
 
-async def request_validation_handler(
-    request: Request, exc: RequestValidationError
-) -> JSONResponse:
+async def request_validation_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
     """
     Pydantic-валидация → RFC7807 с расширением 'errors' (список полей).
     """
