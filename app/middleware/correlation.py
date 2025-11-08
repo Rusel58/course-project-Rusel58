@@ -1,8 +1,22 @@
+import re
 from uuid import uuid4
 
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 HEADER = b"x-correlation-id"
+_ALLOWED_RE = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
+
+
+def _sanitize_correlation_id(raw: str | None) -> str:
+    """Разрешаем только безопасный ASCII-токен 1..64, иначе генерируем UUID4."""
+    if not raw:
+        return str(uuid4())
+    s = raw.strip()
+    if "\r" in s or "\n" in s:
+        return str(uuid4())
+    if not _ALLOWED_RE.fullmatch(s):
+        return str(uuid4())
+    return s
 
 
 class CorrelationIdMiddleware:
@@ -10,27 +24,31 @@ class CorrelationIdMiddleware:
         self.app = app
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send):
-        if scope["type"] != "http":
+        if scope.get("type") != "http":
             return await self.app(scope, receive, send)
 
-        # Читаем из заголовка или генерируем
-        headers = dict(scope.get("headers") or [])
-        cid = headers.get(HEADER, None)
-        cid_str = (cid.decode() if isinstance(cid, (bytes, bytearray)) else cid) or str(
-            uuid4()
-        )
+        cid_bytes = None
+        for k, v in scope.get("headers") or []:
+            if k.lower() == HEADER:
+                cid_bytes = v
+                break
 
-        # кладём в scope для хендлеров
-        scope.setdefault("state", {})
-        scope["state"]["correlation_id"] = cid_str
+        raw = (
+            cid_bytes.decode("ascii", "ignore")
+            if isinstance(cid_bytes, (bytes, bytearray))
+            else None
+        )
+        cid_str = _sanitize_correlation_id(raw)
+
+        scope.setdefault("state", {})["correlation_id"] = cid_str
 
         async def send_wrapper(message):
             if message["type"] == "http.response.start":
-                raw_headers = list(message.get("headers") or [])
-                # убрать возможные дубликаты (регистронезависимо)
-                raw_headers = [(k, v) for (k, v) in raw_headers if k.lower() != HEADER]
-                raw_headers.append((HEADER, cid_str.encode()))
-                message = {**message, "headers": raw_headers}
+                headers = [
+                    (k, v) for (k, v) in (message.get("headers") or []) if k.lower() != HEADER
+                ]
+                headers.append((HEADER, cid_str.encode("ascii")))
+                message = {**message, "headers": headers}
             await send(message)
 
         await self.app(scope, receive, send_wrapper)

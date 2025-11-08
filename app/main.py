@@ -15,7 +15,6 @@ from app.middleware_errors import ProblemJSONMiddleware
 def create_app() -> FastAPI:
     app = FastAPI(title="SecDev Course App", version="0.1.0")
 
-    # порядок важен: сначала твоя мидлвара, затем корреляция
     app.add_middleware(ProblemJSONMiddleware)
     app.add_middleware(CorrelationIdMiddleware)
 

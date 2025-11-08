@@ -1,6 +1,6 @@
+import httpx
 import pytest
 import pytest_asyncio
-from httpx import AsyncClient
 
 from app.db import get_db
 from app.main import create_app
@@ -18,7 +18,8 @@ def _clean_db():
 @pytest_asyncio.fixture
 async def client():
     app = create_app()
-    async with AsyncClient(app=app, base_url="http://test") as ac:
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
 
 
@@ -27,7 +28,7 @@ async def _assert_problem_json(body: dict):
 
 
 @pytest.mark.asyncio
-async def test_create_workout_201_and_get_by_id_200(client: AsyncClient):
+async def test_create_workout_201_and_get_by_id_200(client):
     payload = {"title": "Leg day", "notes": "squats", "duration_min": 45}
     r = await client.post("/workouts", json=payload)
     assert r.status_code == 201
@@ -45,7 +46,7 @@ async def test_create_workout_201_and_get_by_id_200(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_create_validation_error_from_pydantic_422(client: AsyncClient):
+async def test_create_validation_error_from_pydantic_422(client):
     # duration_min < 1 нарушает схему -> RequestValidationError -> RFC7807
     r = await client.post("/workouts", json={"title": "Bad", "duration_min": 0})
     assert r.status_code == 422
@@ -57,15 +58,13 @@ async def test_create_validation_error_from_pydantic_422(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_list_workouts_with_date_filters(client: AsyncClient):
+async def test_list_workouts_with_date_filters(client):
     # создаём в разные даты
     await client.post("/workouts", json={"title": "A", "date": "2025-09-01"})
     await client.post("/workouts", json={"title": "B", "date": "2025-09-10"})
     await client.post("/workouts", json={"title": "C", "date": "2025-09-20"})
 
-    r = await client.get(
-        "/workouts", params={"date_from": "2025-09-05", "date_to": "2025-09-15"}
-    )
+    r = await client.get("/workouts", params={"date_from": "2025-09-05", "date_to": "2025-09-15"})
     assert r.status_code == 200
     data = r.json()
     titles = [w["title"] for w in data]
@@ -75,7 +74,7 @@ async def test_list_workouts_with_date_filters(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_patch_workout_ok_and_validation_guard(client: AsyncClient):
+async def test_patch_workout_ok_and_validation_guard(client):
     # создаём
     r = await client.post("/workouts", json={"title": "X"})
     wid = r.json()["id"]
@@ -88,9 +87,7 @@ async def test_patch_workout_ok_and_validation_guard(client: AsyncClient):
     assert body.get("error_code") == "validation_error"
 
     # частичный апдейт — ok
-    r_ok = await client.patch(
-        f"/workouts/{wid}", json={"notes": "updated", "duration_min": 30}
-    )
+    r_ok = await client.patch(f"/workouts/{wid}", json={"notes": "updated", "duration_min": 30})
     assert r_ok.status_code == 200
     body_ok = r_ok.json()
     assert body_ok["notes"] == "updated"
@@ -99,7 +96,7 @@ async def test_patch_workout_ok_and_validation_guard(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_delete_workout_204_then_404(client: AsyncClient):
+async def test_delete_workout_204_then_404(client):
     r = await client.post("/workouts", json={"title": "ToDelete"})
     wid = r.json()["id"]
 

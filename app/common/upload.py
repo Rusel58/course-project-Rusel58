@@ -1,8 +1,9 @@
+import os
 import uuid
 from pathlib import Path
 
-MAX_BYTES = 5_000_000
 ALLOWED = {"image/png", "image/jpeg"}
+MAX_BYTES = 5_000_000
 
 PNG = b"\x89PNG\r\n\x1a\n"
 JPEG_SOI = b"\xff\xd8"
@@ -27,18 +28,28 @@ def secure_save(base_dir: str, data: bytes) -> tuple[bool, str]:
 
     root = Path(base_dir).resolve()
     root.mkdir(parents=True, exist_ok=True)
+    if root.is_symlink():
+        return False, "symlink_root"
 
     ext = ".png" if mt == "image/png" else ".jpg"
     name = f"{uuid.uuid4()}{ext}"
-    path = (root / name).resolve()
 
-    # Защищаемся от traversal и симлинков в родителях
-    if not str(path).startswith(str(root)):
-        return False, "path_traversal"
-    if any(p.is_symlink() for p in path.parents):
-        return False, "symlink_parent"
+    stored_path_str: str
+    dir_fd = os.open(str(root), os.O_RDONLY)
+    try:
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        fd = os.open(name, flags, mode=0o600, dir_fd=dir_fd)
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
+            f.flush()
+            os.fsync(f.fileno())
+        stored_path_str = str(root / name)
+    finally:
+        try:
+            os.close(dir_fd)
+        except OSError:
+            pass
 
-    with open(path, "wb") as f:
-        f.write(data)
-
-    return True, str(path)
+    return True, stored_path_str
