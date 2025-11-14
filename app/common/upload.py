@@ -1,6 +1,6 @@
 import os
-import uuid
 from pathlib import Path
+import uuid
 
 ALLOWED = {"image/png", "image/jpeg"}
 MAX_BYTES = 5_000_000

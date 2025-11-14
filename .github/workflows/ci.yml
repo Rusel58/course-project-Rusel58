@@ -1,42 +1,135 @@
-name: CI
+name: CI (minimal)
+
 on:
-  pull_request:
-    branches: [main]
-    types: [opened, synchronize, reopened, ready_for_review]
   push:
-    branches: [main]
-  workflow_dispatch:
+  pull_request:
 
 permissions:
   contents: read
+
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  build:
+  # ---------------- C1–C4: lint + тесты + кэш + артефакты ----------------
+  test:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PYTHONPATH: ${{ github.workspace }}
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
-          cache: "pip"
+          python-version: "3.12"
 
-      - name: Install dependencies
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements*.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install deps
         run: |
-          python -m pip install -U pip
+          python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
           if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
-          pip install -e .  # <-- чтобы модуль app был доступен
+          pip install ruff black isort pytest
 
-      - name: Pre-commit (all files)
-        run: pre-commit run --all-files --color always
-        env:
-          SKIP: no-commit-to-branch
+      - name: Lint
+        run: |
+          ruff check .
+          black --check .
+          isort --check-only .
 
       - name: Tests
-        env:
-          PYTHONPATH: ${{ github.workspace }}  # безопасная подстраховка
-        run: pytest -q
+        run: |
+          mkdir -p reports
+          pytest -q --maxfail=1 --disable-warnings --junitxml=reports/junit.xml
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: reports/**
+
+  # ---------------- C5: "стейдж-деплой / эмуляция" ----------------
+  staging:
+    # запускается только если тесты прошли
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    permissions:
+      contents: read
+      packages: write   # нужно, чтобы пушить образ в GHCR
+
+    env:
+      IMAGE_NAME: ghcr.io/rusel58/course-project-rusel58
+      CONTAINER_NAME: course-app
+      PORT: "8000"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build image (load for smoke test)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: ${{ env.IMAGE_NAME }}:staging-local
+
+      - name: Smoke test /health
+        run: |
+          docker run -d --rm --name "$CONTAINER_NAME" -p "$PORT:$PORT" \
+            -e UPLOAD_DIR=/var/app/uploads \
+            "$IMAGE_NAME:staging-local"
+
+          # ждём старт сервиса и пробуем /health
+          for i in $(seq 1 30); do
+            if curl -fsS "http://127.0.0.1:${PORT}/health" >/dev/null; then
+              echo "Health OK"
+              break
+            fi
+            echo "Waiting for app... ($i)"
+            sleep 2
+          done
+
+          curl -fsS "http://127.0.0.1:${PORT}/health"
+          docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
+
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=staging
+            type=sha,format=short,prefix=sha-
+
+      - name: Build & Push image (staging)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
