@@ -1,0 +1,92 @@
+name: Security - SBOM & SCA
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "requirements*.txt"
+      - "**/*.py"
+      - ".github/workflows/ci-sbom-sca.yml"
+  pull_request:
+    paths:
+      - "requirements*.txt"
+      - "**/*.py"
+      - ".github/workflows/ci-sbom-sca.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sbom-sca-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sbom-sca:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare evidence dir
+        run: mkdir -p EVIDENCE/P09
+
+      # SBOM (CycloneDX JSON)
+      - name: Generate SBOM (Trivy CycloneDX)
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          scan-type: 'fs'
+          # cyclonedx = SBOM в формате CycloneDX
+          format: 'cyclonedx'
+          output: 'EVIDENCE/P09/sbom.json'
+          # игнорируем нефикисируемые (для стабильности отчётов)
+          ignore-unfixed: true
+          # полный диапазон severity
+          severity: 'UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL'
+          # ограничим время
+          timeout: '10m'
+
+      # SCA (JSON отчёт уязвимостей)
+      - name: SCA report (Trivy JSON)
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          scan-type: 'fs'
+          format: 'json'
+          output: 'EVIDENCE/P09/sca_report.json'
+          ignore-unfixed: true
+          severity: 'UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL'
+          timeout: '10m'
+
+      # SCA summary (агрегация по severity)
+      - name: Build SCA summary
+        shell: bash
+        run: |
+          echo "# SCA summary" > EVIDENCE/P09/sca_summary.md
+          echo "" >> EVIDENCE/P09/sca_summary.md
+          echo "- Commit: $GITHUB_SHA" >> EVIDENCE/P09/sca_summary.md
+          echo "- Generated: $(date -u +"%Y-%m-%dT%H:%M:%SZ")" >> EVIDENCE/P09/sca_summary.md
+          echo "" >> EVIDENCE/P09/sca_summary.md
+          # агрегируем количества уязвимостей по уровням
+          jq '[.Results[].Vulnerabilities[]?.Severity] 
+              | group_by(.) 
+              | map({(.[0]): length}) 
+              | add // {}' EVIDENCE/P09/sca_report.json \
+              >> EVIDENCE/P09/sca_summary.md || true
+
+      # (опционально для ★★) — fail, если есть HIGH/CRITICAL
+      # - name: Enforce policy (fail on HIGH/CRITICAL)
+      #   run: |
+      #     highs=$(jq '[.Results[].Vulnerabilities[]?|select(.Severity=="HIGH")] | length' EVIDENCE/P09/sca_report.json)
+      #     crits=$(jq '[.Results[].Vulnerabilities[]?|select(.Severity=="CRITICAL")] | length' EVIDENCE/P09/sca_report.json)
+      #     echo "HIGH=$highs, CRITICAL=$crits"
+      #     if [ $((highs+crits)) -gt 0 ]; then
+      #       echo "::error::Found HIGH/CRITICAL vulnerabilities"
+      #       exit 1
+      #     fi
+
+      - name: Upload Evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: evidence-p09-${{ github.sha }}
+          path: EVIDENCE/P09/*
+          retention-days: 14
