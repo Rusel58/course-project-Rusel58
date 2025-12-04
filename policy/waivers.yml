@@ -1,0 +1,10 @@
+version: 1
+waivers:
+  - id: WAIVER-0001
+    cve: CVE-YYYY-XXXX
+    package: example
+    affected_version: 1.2.3
+    reason: "False positive in dev-зависимости; не достижимо в рантайме"
+    expires_on: "2026-03-01"
+    issue: "https://github.com/OWNER/REPO/issues/123"
+    approved_by: "Maintainer Name"

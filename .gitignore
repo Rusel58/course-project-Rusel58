@@ -16,3 +16,6 @@ build/
 .DS_Store
 var/
 !var/.gitkeep
+EVIDENCE/P09/*.json
+EVIDENCE/P09/*.md
+!EVIDENCE/P09/.gitkeep
