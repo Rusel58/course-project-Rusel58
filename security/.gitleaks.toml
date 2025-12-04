@@ -1,0 +1,11 @@
+title = "Course project gitleaks config"
+
+#[extend]
+#path = "gitleaks:default"
+
+[allowlist]
+description = "Allowlist for non-sensitive data (evidence, tests)"
+paths = [
+  '''EVIDENCE/.*''',
+  '''tests/fixtures/.*''',
+]

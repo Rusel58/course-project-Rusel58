@@ -1,0 +1,10 @@
+rules:
+  - id: py-no-eval
+    patterns:
+      - pattern: eval(...)
+    message: "Avoid eval(): небезопасное выполнение произвольного кода."
+    severity: WARNING
+    languages: [python]
+    paths:
+      exclude:
+        - "tests/**"
