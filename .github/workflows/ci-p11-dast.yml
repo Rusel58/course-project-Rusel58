@@ -1,0 +1,103 @@
+name: Security - DAST (ZAP baseline)
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "app/**"
+      - "requirements*.txt"
+      - ".github/workflows/ci-p11-dast.yml"
+      - "EVIDENCE/P11/**"
+  pull_request:
+    paths:
+      - "app/**"
+      - "requirements*.txt"
+      - ".github/workflows/ci-p11-dast.yml"
+      - "EVIDENCE/P11/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dast-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  zap-baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    env:
+      APP_HOST: 127.0.0.1
+      APP_PORT: "8000"
+      APP_URL: http://127.0.0.1:8000
+      HEALTH_PATH: /health  # если у тебя /healthz — поменяй здесь и ниже
+      EVIDENCE_DIR: EVIDENCE/P11
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install app dependencies
+        run: |
+          python -m pip install -U pip
+          pip install -r requirements.txt
+
+      - name: Run app in background
+        run: |
+          python -m uvicorn app.main:create_app --factory \
+            --host 0.0.0.0 --port "${APP_PORT}" &
+          echo "APP_PID=$!" >> "$GITHUB_ENV"
+          sleep 2
+
+      - name: Wait for app to be ready
+        run: |
+          for i in {1..30}; do
+            if curl -sf "${APP_URL}${HEALTH_PATH}" > /dev/null; then
+              echo "App is up ✅"
+              exit 0
+            fi
+            echo "Waiting for app on ${APP_URL}${HEALTH_PATH} (try $i/30)..."
+            sleep 2
+          done
+          echo "App failed to start ❌" >&2
+          exit 1
+
+      - name: Run ZAP baseline
+        run: |
+          mkdir -p "${EVIDENCE_DIR}"
+
+          docker run --rm \
+            --network="host" \
+            -v "$PWD":/zap/wrk \
+            owasp/zap2docker-stable \
+            zap-baseline.py \
+              -t "${APP_URL}/" \
+              -r zap_baseline.html \
+              -J zap_baseline.json \
+              -z "-config scanner.threadPerHost=5 -config scanner.hostPerScan=3" \
+          || true
+
+          mv zap_baseline.html "${EVIDENCE_DIR}/zap_baseline.html"
+          mv zap_baseline.json "${EVIDENCE_DIR}/zap_baseline.json"
+
+      - name: Stop app
+        if: always()
+        run: |
+          if [ -n "${APP_PID:-}" ]; then
+            echo "Stopping app (PID=${APP_PID})"
+            kill "${APP_PID}" || true
+          fi
+
+      - name: Upload ZAP reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: P11_EVIDENCE
+          path: ${{ env.EVIDENCE_DIR }}/
