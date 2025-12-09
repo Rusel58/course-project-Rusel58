@@ -31,7 +31,7 @@ jobs:
       APP_HOST: 127.0.0.1
       APP_PORT: "8000"
       APP_URL: http://127.0.0.1:8000
-      HEALTH_PATH: /health  # если у тебя /healthz — поменяй здесь и ниже
+      HEALTH_PATH: /health
       EVIDENCE_DIR: EVIDENCE/P11
 
     steps:
@@ -74,8 +74,9 @@ jobs:
           mkdir -p "${EVIDENCE_DIR}"
 
           docker run --rm \
-            --network="host" \
-            -v "$PWD":/zap/wrk \
+            --network host \
+            --user 0:0 \
+            -v "$PWD":/zap/wrk:rw \
             ghcr.io/zaproxy/zaproxy:stable \
             zap-baseline.py \
               -t "${APP_URL}/" \
@@ -84,8 +85,26 @@ jobs:
               -z "-config scanner.threadPerHost=5 -config scanner.hostPerScan=3" \
           || true
 
-          mv zap_baseline.html "${EVIDENCE_DIR}/zap_baseline.html"
-          mv zap_baseline.json "${EVIDENCE_DIR}/zap_baseline.json"
+          missing=0
+
+          if [ -f zap_baseline.html ]; then
+            mv zap_baseline.html "${EVIDENCE_DIR}/zap_baseline.html"
+          else
+            echo "zap_baseline.html not found ❌" >&2
+            missing=1
+          fi
+
+          if [ -f zap_baseline.json ]; then
+            mv zap_baseline.json "${EVIDENCE_DIR}/zap_baseline.json"
+          else
+            echo "zap_baseline.json not found ❌" >&2
+            missing=1
+          fi
+
+          if [ "$missing" -ne 0 ]; then
+            echo "ZAP reports were not generated, failing job." >&2
+            exit 1
+          fi
 
       - name: Stop app
         if: always()
