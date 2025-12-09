@@ -76,7 +76,7 @@ jobs:
           docker run --rm \
             --network="host" \
             -v "$PWD":/zap/wrk \
-            owasp/zap2docker-stable \
+            ghcr.io/zaproxy/zaproxy:stable \
             zap-baseline.py \
               -t "${APP_URL}/" \
               -r zap_baseline.html \
