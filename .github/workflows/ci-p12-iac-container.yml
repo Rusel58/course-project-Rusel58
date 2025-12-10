@@ -1,0 +1,87 @@
+name: Security - IaC & Container (P12)
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "Dockerfile"
+      - "compose.yaml"
+      - "security/**"
+      - "EVIDENCE/P12/**"
+      - ".github/workflows/ci-p12-iac-container.yml"
+  pull_request:
+    paths:
+      - "Dockerfile"
+      - "compose.yaml"
+      - "security/**"
+      - "EVIDENCE/P12/**"
+      - ".github/workflows/ci-p12-iac-container.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: p12-iac-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  iac-container-security:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      IMAGE_NAME: course-project-rusel58:p12-scan
+      DOCKERFILE: Dockerfile
+      IAC_TARGET: compose.yaml
+      EVIDENCE_DIR: EVIDENCE/P12
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Ensure evidence dir
+        run: mkdir -p "${EVIDENCE_DIR}"
+
+      - name: Build image from Dockerfile
+        run: |
+          docker build -t "${IMAGE_NAME}" -f "${DOCKERFILE}" .
+
+      - name: Run Hadolint on Dockerfile
+        run: |
+          docker run --rm -i \
+            -v "$PWD/security/hadolint.yaml":/config/hadolint.yaml \
+            hadolint/hadolint \
+            hadolint -f json -c /config/hadolint.yaml - \
+            < "${DOCKERFILE}" \
+            > "${EVIDENCE_DIR}/hadolint_report.json" \
+          || true
+
+      - name: Run Checkov on IaC (docker-compose)
+        run: |
+          docker run --rm \
+            -v "$PWD":/tf \
+            bridgecrew/checkov:latest \
+              -f "/tf/${IAC_TARGET}" \
+              -o json \
+              --config-file /tf/security/checkov.yaml \
+            > "${EVIDENCE_DIR}/checkov_report.json" \
+          || true
+
+      - name: Run Trivy on image
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$PWD":/work \
+            aquasec/trivy:0.55.2 \
+              image "${IMAGE_NAME}" \
+              --security-checks vuln \
+              --format json \
+              --output "/work/${EVIDENCE_DIR}/trivy_report.json" \
+          || true
+
+      - name: Upload P12 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: P12_EVIDENCE
+          path: ${{ env.EVIDENCE_DIR }}/
