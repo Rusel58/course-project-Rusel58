@@ -1,0 +1,8 @@
+scanners:
+  - vuln
+
+vuln:
+  severity:
+    - CRITICAL
+    - HIGH
+    - MEDIUM
